@@ -246,7 +246,7 @@ def _update_nested_column_data_types(
                 {root_column_name: {"data_type": column_data_type_and_constraints, "quote": quote}}
             )
     else:
-        parent_data_type = nested_column_data_types.get(root_column_name)
+        parent_data_type = nested_column_data_types.get(root_column_name, {}).get("data_type")
         if isinstance(parent_data_type, dict):
             # nested dictionary already initialized
             pass
@@ -297,8 +297,8 @@ def _format_nested_data_type(
         return unformatted_nested_data_type
     else:
         parent_data_type, *parent_constraints = unformatted_nested_data_type.pop(
-            _PARENT_DATA_TYPE_KEY, ""
-        ).split() or [None]
+            _PARENT_DATA_TYPE_KEY, {"data_type": ""}
+        ).get("data_type").split() or [None]
 
         formatted_nested_types = []
         for column_name, column_type in unformatted_nested_data_type.items():
