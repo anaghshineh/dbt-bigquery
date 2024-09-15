@@ -158,10 +158,12 @@ def get_nested_column_data_types(
     """
     constraints = constraints or {}
 
-    nested_column_data_types: Dict[str, Optional[Union[str, Dict]]] = {}
+    # Revisit this type
+    nested_column_data_types: Dict[str, Dict[str, Any]] = {}
     for column in columns.values():
         _update_nested_column_data_types(
             column["name"],
+            column.get("quote"),
             column.get("data_type"),
             constraints.get(column["name"]),
             nested_column_data_types,
@@ -171,7 +173,10 @@ def get_nested_column_data_types(
     for column_name, unformatted_column_type in nested_column_data_types.items():
         formatted_nested_column_data_types[column_name] = {
             "name": column_name,
-            "data_type": _format_nested_data_type(unformatted_column_type),
+            "data_type": _format_nested_data_type(
+                unformatted_column_type.get("data_type", unformatted_column_type),
+                unformatted_column_type.get("quote"),
+            ),
         }
 
     # add column configs back to flat columns
@@ -190,9 +195,10 @@ def get_nested_column_data_types(
 
 def _update_nested_column_data_types(
     column_name: str,
+    quote: Optional[bool],
     column_data_type: Optional[str],
     column_rendered_constraint: Optional[str],
-    nested_column_data_types: Dict[str, Optional[Union[str, Dict]]],
+    nested_column_data_types: Dict[str, Dict[str, Any]],
 ) -> None:
     """
     Recursively update nested_column_data_types given a column_name, column_data_type, and optional column_rendered_constraint.
@@ -228,10 +234,17 @@ def _update_nested_column_data_types(
             assert isinstance(existing_nested_column_data_type, dict)  # keeping mypy happy
             # entry could already exist if this is a parent column -- preserve the parent data type under "_PARENT_DATA_TYPE_KEY"
             existing_nested_column_data_type.update(
-                {_PARENT_DATA_TYPE_KEY: column_data_type_and_constraints}
+                {
+                    _PARENT_DATA_TYPE_KEY: {
+                        "data_type": column_data_type_and_constraints,
+                        "quote": quote,
+                    }
+                }
             )
         else:
-            nested_column_data_types.update({root_column_name: column_data_type_and_constraints})
+            nested_column_data_types.update(
+                {root_column_name: {"data_type": column_data_type_and_constraints, "quote": quote}}
+            )
     else:
         parent_data_type = nested_column_data_types.get(root_column_name)
         if isinstance(parent_data_type, dict):
@@ -244,7 +257,11 @@ def _update_nested_column_data_types(
             # a parent specified its base type -- preserve its data_type and potential rendered constraints
             # this is used to specify a top-level 'struct' or 'array' field with its own description, constraints, etc
             nested_column_data_types.update(
-                {root_column_name: {_PARENT_DATA_TYPE_KEY: parent_data_type}}
+                {
+                    root_column_name: {
+                        _PARENT_DATA_TYPE_KEY: {"data_type": parent_data_type, "quote": quote}
+                    }
+                }
             )
 
         # Recursively process rest of remaining column name
@@ -253,6 +270,7 @@ def _update_nested_column_data_types(
         assert isinstance(remaining_column_data_types, dict)  # keeping mypy happy
         _update_nested_column_data_types(
             remaining_column_name,
+            quote,
             column_data_type,
             column_rendered_constraint,
             remaining_column_data_types,
@@ -260,7 +278,7 @@ def _update_nested_column_data_types(
 
 
 def _format_nested_data_type(
-    unformatted_nested_data_type: Optional[Union[str, Dict[str, Any]]]
+    unformatted_nested_data_type: Union[str, Dict[str, Any]], quote: Optional[bool]
 ) -> Optional[str]:
     """
     Recursively format a (STRUCT) data type given an arbitrarily nested data type structure.
@@ -282,10 +300,14 @@ def _format_nested_data_type(
             _PARENT_DATA_TYPE_KEY, ""
         ).split() or [None]
 
-        formatted_nested_types = [
-            f"{column_name} {_format_nested_data_type(column_type) or ''}".strip()
-            for column_name, column_type in unformatted_nested_data_type.items()
-        ]
+        formatted_nested_types = []
+        for column_name, column_type in unformatted_nested_data_type.items():
+            quoted_column_name = f"`{column_name}`" if column_type.get("quote") else column_name
+            formatted_type = (
+                _format_nested_data_type(column_type.get("data_type"), column_type.get("quote"))
+                or ""
+            )
+            formatted_nested_types.append(f"{quoted_column_name} {formatted_type}")
 
         formatted_nested_type = f"""struct<{", ".join(formatted_nested_types)}>"""
 
