@@ -307,7 +307,7 @@ def _format_nested_data_type(
                 _format_nested_data_type(column_type.get("data_type"), column_type.get("quote"))
                 or ""
             )
-            formatted_nested_types.append(f"{quoted_column_name} {formatted_type}")
+            formatted_nested_types.append(f"{quoted_column_name} {formatted_type}".strip())
 
         formatted_nested_type = f"""struct<{", ".join(formatted_nested_types)}>"""
 
